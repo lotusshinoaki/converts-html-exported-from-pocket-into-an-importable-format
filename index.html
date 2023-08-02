@@ -1,0 +1,170 @@
+<!DOCTYPE html5>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Converts HTML exported from Pocket into an importable format</title>
+    <style>
+      form > div {
+        margin-bottom: 16px;
+        margin-top: 16px;
+      }
+      span.warn {
+        color: #d22;
+      }
+    </style>
+  </head>
+  <body>
+    <p>
+      Pocket
+      <a
+        href="https://help.getpocket.com/article/1015-exporting-your-pocket-list"
+        rel="noopener norefrer"
+        target="_blank"
+        >can export saves.</a
+      >
+      However, exported html
+      <a
+        href="https://getpocket.com/import/browser"
+        rel="noopener norefrer"
+        target="_blank"
+        >cannot be imported as-is.</a
+      >
+    </p>
+    <p>
+      Select the exported html file and click "Convert!" to convert it to an
+      importable format.
+    </p>
+    <form id="_form" onsubmit>
+      <div>
+        <label>
+          Exported file
+          <input accept="text/html" id="fileInput" type="file" />
+        </label>
+      </div>
+      <div>
+        <label>
+          Chunk size
+          <select id="chunkSizeInput">
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option selected value="400">400</option>
+            <option value="600">600</option>
+            <option value="800">800</option>
+          </select>
+          <br />
+          <span class="warn"
+            >If the chunk size is too large, 504 error will be returned upon import.</span
+          >
+        </label>
+      </div>
+      <div>
+        <button>Convert!</button>
+      </div>
+    </form>
+    <ul id="resultList"></ul>
+    <script>
+      const TEMPLATE = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'none'; img-src data: *; object-src 'none'"><\/meta>
+<TITLE>Bookmarks<\/TITLE>
+<H1>Bookmark Menu<i/H1>
+
+<DL><p>
+    <HR>
+    <!-- placeholder -->
+<\/DL>`;
+      document.addEventListener("DOMContentLoaded", (event) => {
+        const _form = document.getElementById("_form");
+        const fileInput = document.getElementById("fileInput");
+        const chunkSizeInput = document.getElementById("chunkSizeInput");
+        const resultList = document.getElementById("resultList");
+
+        _form.addEventListener("submit", (e) => {
+          e.preventDefault();
+
+          const files = fileInput.files;
+          if (files.length !== 1) {
+            return;
+          }
+          const exportedFile = files[0];
+          const chunkSize = parseInt(chunkSizeInput.value, 10);
+
+          (async () => {
+            const hrefAndTitles = await loadExportedHtml(exportedFile);
+            const reversed = hrefAndTitles.reverse();
+
+            resultList.innerHTML = "";
+            let i = 1;
+            for (const chunked of chunk(reversed, chunkSize)) {
+              const links = chunked
+                .map(
+                  ({ href, title }) =>
+                    '<DT><A HREF="' +
+                    encodeURI(href) +
+                    '" ADD_DATE="0" LAST_MODIFIED="0">' +
+                    title +
+                    "<\/A>"
+                )
+                .join("\n");
+              const importableHtml = TEMPLATE.replace(
+                "<!-- placeholder -->",
+                links
+              );
+
+              const anchor = document.createElement("a");
+              anchor.download = `bookmarks${i}.html`;
+              anchor.href = await htmlToDataUri(importableHtml);
+              anchor.textContent = anchor.download;
+
+              const li = document.createElement("li");
+              li.appendChild(anchor);
+
+              resultList.appendChild(li);
+              i++;
+            }
+          })();
+        });
+      });
+
+      function loadExportedHtml(file) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            const parser = new DOMParser();
+            const dom = parser.parseFromString(reader.result, "text/html");
+            const anchors = Array.from(dom.getElementsByTagName("a"));
+
+            resolve(
+              anchors.map((anchor) => ({
+                href: anchor.href,
+                title: anchor.textContent,
+              }))
+            );
+          });
+          reader.readAsText(file);
+        });
+      }
+
+      function chunk(array, size) {
+        const result = [];
+        const last = Math.ceil(array.length / size);
+        for (let i = 0; i < last; i++) {
+          result.push(array.slice(i * size, (i + 1) * size));
+        }
+        return result;
+      }
+
+      function htmlToDataUri(str) {
+        return new Promise((resolve) => {
+          const fileReader = new FileReader();
+          fileReader.addEventListener("load", () => resolve(fileReader.result));
+          fileReader.readAsDataURL(new Blob([str], { type: "text/html" }));
+        });
+      }
+    </script>
+  </body>
+</html>
